@@ -889,4 +889,4 @@ else:
         if username == "Najam": # Yahan apna username likhein
             st.markdown("---")
             st.markdown("### 👑 Admin Control Panel")
-            all_users = get_sheet_data("users", ["username", "password",
+            all_users = get_sheet_data("users", ["username", "password", "goal"])
