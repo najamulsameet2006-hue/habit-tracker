@@ -1,33 +1,26 @@
 import streamlit as st
 import pandas as pd
-import psycopg2
-import psycopg2.extras
+import sqlite3
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, date, timedelta
-import time
-import warnings
-warnings.filterwarnings('ignore') # Pandas DB warnings ko chupane ke liye
+import time  # Nayi library animation ko rokne ke liye
 
 # ==========================================
-# 1. DATABASE MANAGEMENT (Neon PostgreSQL)
+# 1. DATABASE MANAGEMENT (SQLite Integration)
 # ==========================================
 def get_db_connection():
-    # Streamlit secrets se link utha kar connect karta hai
-    conn = psycopg2.connect(
-        st.secrets["DATABASE_URL"], 
-        cursor_factory=psycopg2.extras.RealDictCursor
-    )
+    conn = sqlite3.connect("tracker_najam.db")
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # SQLite ki jagah PostgreSQL ke commands
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             age INTEGER,
@@ -43,7 +36,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS habits (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             habit_name TEXT NOT NULL,
             UNIQUE(username, habit_name)
@@ -52,7 +45,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS habit_logs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             habit_name TEXT NOT NULL,
             log_date TEXT NOT NULL,
@@ -63,7 +56,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS weight_tracker (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             weight REAL NOT NULL,
             bmi REAL NOT NULL,
@@ -74,7 +67,7 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS diet_workout_logs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             log_date TEXT NOT NULL,
             diet_completed INTEGER DEFAULT 0,
@@ -85,7 +78,7 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS login_logs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
             login_date TEXT NOT NULL,
             UNIQUE(username, login_date)
@@ -93,13 +86,9 @@ def init_db():
     """)
     
     conn.commit()
-    cursor.close()
     conn.close()
 
-try:
-    init_db()
-except Exception as e:
-    st.error(f"Database Error: {e}")
+init_db()
 
 # ==========================================
 # 2. MOBILE-FRIENDLY CONFIGURATION & PREMIUM STYLING
@@ -120,24 +109,15 @@ st.markdown("""
         color: #f3f4f6;
     }
     
-    /* Text Visibility Fixes */
-    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
-        color: #f3f4f6 !important;
-    }
-    
-    /* Tabs Visibility Fixes */
-    button[data-baseweb="tab"] p {
-        color: #cbd5e1 !important;
-        font-size: 16px !important;
-    }
-    button[aria-selected="true"] p {
-        color: #f97316 !important;
-        font-weight: 800 !important;
-    }
-    
     @keyframes pulseGlow {
-        0%, 100% { text-shadow: 0 0 10px rgba(192, 132, 252, 0.4), 0 0 20px rgba(249, 115, 22, 0.2); transform: scale(1); }
-        50% { text-shadow: 0 0 25px rgba(192, 132, 252, 0.8), 0 0 40px rgba(249, 115, 22, 0.6); transform: scale(1.02); }
+        0%, 100% { 
+            text-shadow: 0 0 10px rgba(192, 132, 252, 0.4), 0 0 20px rgba(249, 115, 22, 0.2); 
+            transform: scale(1);
+        }
+        50% { 
+            text-shadow: 0 0 25px rgba(192, 132, 252, 0.8), 0 0 40px rgba(249, 115, 22, 0.6);
+            transform: scale(1.02);
+        }
     }
     
     .animated-title {
@@ -251,6 +231,7 @@ st.markdown("""
         .slideshow-box { height: 250px; }
     }
     
+    /* Custom Celebration Overlay */
     .celebration-banner {
         text-align: center;
         background: rgba(17, 24, 39, 0.9);
@@ -270,47 +251,57 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Session Setup
-if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-if "username" not in st.session_state: st.session_state["username"] = ""
-if "streak_notified" not in st.session_state: st.session_state["streak_notified"] = False
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
+if "streak_notified" not in st.session_state:
+    st.session_state["streak_notified"] = False
 
 # ==========================================
 # 3. MATHEMATICAL COMPUTATIONS HELPERS
 # ==========================================
 def calculate_bmi(weight, height, w_unit, h_unit):
     w_kg = weight if w_unit == "Kilograms (kg)" else weight * 0.453592
-    if h_unit == "Centimeters (cm)": h_m = height / 100
-    else: h_m = height * 0.3048
-    if h_m > 0: return round(w_kg / (h_m ** 2), 2)
+    if h_unit == "Centimeters (cm)":
+        h_m = height / 100
+    else:
+        h_m = height * 0.3048
+    if h_m > 0:
+        return round(w_kg / (h_m ** 2), 2)
     return 0.0
 
 def estimate_calories(age, weight, height, w_unit, h_unit, goal):
     w_kg = weight if w_unit == "Kilograms (kg)" else weight * 0.453592
     h_cm = height if h_unit == "Centimeters (cm)" else height * 30.48
     bmr = 10 * w_kg + 6.25 * h_cm - 5 * age + 5
-    if goal == "Fat Loss": return int(bmr * 1.2 - 350)
-    elif goal == "Muscle Gain": return int(bmr * 1.35 + 300)
-    else: return int(bmr * 1.3)
+    if goal == "Fat Loss":
+        return int(bmr * 1.2 - 350)
+    elif goal == "Muscle Gain":
+        return int(bmr * 1.35 + 300)
+    else:
+        return int(bmr * 1.3)
 
 def update_and_get_streak(username):
     conn = get_db_connection()
     cursor = conn.cursor()
     today_str = date.today().strftime("%Y-%m-%d")
     
-    cursor.execute("SELECT 1 FROM login_logs WHERE username = %s AND login_date = %s", (username, today_str))
+    cursor.execute("SELECT 1 FROM login_logs WHERE username = ? AND login_date = ?", (username, today_str))
     already_logged = cursor.fetchone() is not None
     
     if not already_logged:
-        cursor.execute("INSERT INTO login_logs (username, login_date) VALUES (%s, %s) ON CONFLICT (username, login_date) DO NOTHING", (username, today_str))
+        cursor.execute("INSERT OR IGNORE INTO login_logs (username, login_date) VALUES (?, ?)", (username, today_str))
         conn.commit()
     
-    cursor.execute("SELECT login_date FROM login_logs WHERE username = %s ORDER BY login_date DESC", (username,))
+    cursor.execute("SELECT login_date FROM login_logs WHERE username = ? ORDER BY login_date DESC", (username,))
     rows = cursor.fetchall()
     conn.close()
     
     login_dates = [datetime.strptime(row["login_date"], "%Y-%m-%d").date() for row in rows]
     
-    if not login_dates: return 0, False
+    if not login_dates:
+        return 0, False
     
     streak = 0
     current_check = date.today()
@@ -319,8 +310,10 @@ def update_and_get_streak(username):
         if l_date == current_check:
             streak += 1
             current_check -= timedelta(days=1)
-        elif l_date > current_check: continue
-        else: break
+        elif l_date > current_check:
+            continue
+        else:
+            break
             
     streak_increased = not already_logged and streak > 1
     return streak, streak_increased
@@ -329,19 +322,19 @@ def get_user_badges_and_xp(username):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) as completed FROM habit_logs WHERE username = %s AND status = 1", (username,))
+    cursor.execute("SELECT COUNT(*) as completed FROM habit_logs WHERE username = ? AND status = 1", (username,))
     completed_count = cursor.fetchone()["completed"]
     
-    cursor.execute("SELECT COUNT(*) as weight_logs FROM weight_tracker WHERE username = %s", (username,))
+    cursor.execute("SELECT COUNT(*) as weight_logs FROM weight_tracker WHERE username = ?", (username,))
     weight_count = cursor.fetchone()["weight_logs"]
     
-    cursor.execute("SELECT COUNT(*) as habit_count FROM habits WHERE username = %s", (username,))
+    cursor.execute("SELECT COUNT(*) as habit_count FROM habits WHERE username = ?", (username,))
     custom_count = cursor.fetchone()["habit_count"]
 
-    cursor.execute("SELECT COUNT(*) as diet_count FROM diet_workout_logs WHERE username = %s AND diet_completed = 1", (username,))
+    cursor.execute("SELECT COUNT(*) as diet_count FROM diet_workout_logs WHERE username = ? AND diet_completed = 1", (username,))
     diet_count = cursor.fetchone()["diet_count"]
 
-    cursor.execute("SELECT COUNT(*) as workout_count FROM diet_workout_logs WHERE username = %s AND workout_completed = 1", (username,))
+    cursor.execute("SELECT COUNT(*) as workout_count FROM diet_workout_logs WHERE username = ? AND workout_completed = 1", (username,))
     workout_count = cursor.fetchone()["workout_count"]
     
     conn.close()
@@ -352,11 +345,16 @@ def get_user_badges_and_xp(username):
     xp_for_next_level = 120 - (total_xp % 120)
     progress_percentage = (total_xp % 120) / 120.0
     
-    if level == 1: current_badge = {"name": "Starter Seed 🌱", "desc": "Safar ki shuruaat! Habits poori karein aur XP barhayen.", "color": "#10b981"}
-    elif level == 2: current_badge = {"name": "Iron Warrior 🛡️", "desc": "Level 2! Aapki aadat pukhta ho rahi hai.", "color": "#94a3b8"}
-    elif level == 3: current_badge = {"name": "Bronze Champion 🥉", "desc": "Level 3! Behtareen! Aapne ek solid routine bana li hai.", "color": "#d97706"}
-    elif level == 4: current_badge = {"name": "Silver Samurai ⚔️", "desc": "Level 4! Zabardast consistency! Aap unstoppable hain.", "color": "#cbd5e1"}
-    else: current_badge = {"name": "Golden Grandmaster 🏆", "desc": f"Level {level}! Kamaal kar diya! Ab aap ek misaal ban chuke hain.", "color": "#eab308"}
+    if level == 1:
+        current_badge = {"name": "Starter Seed 🌱", "desc": "Safar ki shuruaat! Habits poori karein aur XP barhayen.", "color": "#10b981"}
+    elif level == 2:
+        current_badge = {"name": "Iron Warrior 🛡️", "desc": "Level 2! Aapki aadat pukhta ho rahi hai.", "color": "#94a3b8"}
+    elif level == 3:
+        current_badge = {"name": "Bronze Champion 🥉", "desc": "Level 3! Behtareen! Aapne ek solid routine bana li hai.", "color": "#d97706"}
+    elif level == 4:
+        current_badge = {"name": "Silver Samurai ⚔️", "desc": "Level 4! Zabardast consistency! Aap unstoppable hain.", "color": "#cbd5e1"}
+    else:
+        current_badge = {"name": "Golden Grandmaster 🏆", "desc": f"Level {level}! Kamaal kar diya! Ab aap ek misaal ban chuke hain.", "color": "#eab308"}
         
     return level, total_xp, xp_for_next_level, progress_percentage, current_badge
 
@@ -368,13 +366,48 @@ if not st.session_state["logged_in"]:
     
     st.markdown("""
     <div class="slideshow-box">
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1552674605-db6fea11e0d5?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Rukna nahi hai, thakna nahi hai!” 🌅</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Consistency hi kamyabi ka raaz hai. Apna daily progress yahan track karein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Sasta aur Healthy Pakistani Rashan!” 🥗</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Budget mein rehte huwe behtareen auto-generated diet plan hasil karein aur fit rahein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Doston ko Leaderboard par piche chorrein!” 🏆</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Healthy competition mein hissa lein, apna level up karein aur top rank hasil karein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1548839140-29a749e1ab14?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Pani zindgi hai! Hydration track karein.” 💧</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Din mein 8 glass pani poora karein, dehydration se bachein aur apni energy ko boost karein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1599058917212-d750089bc07e?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Bina Gym ke Calisthenics Routine!” 🤸</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Ghar bethe expert level home workouts follow karein aur strong fitness banayein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1474418397713-722a45d0dd31?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Zehni Sakoon aur Mood Tracking” 🧘</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Apni mental health ka khayal rakhein, habits track karein aur stress ko door bhagayein.</p></div></div>
-        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1000');"><div class="slide-overlay"><h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Daily Streaks aur Badges Unlock Karein!” 🔥</h3><p style="color:#a5b4fc; margin:0; font-size:14px;">Lagatar tracking se nayi achievements, XP points aur exclusive badges hasil karein.</p></div></div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1552674605-db6fea11e0d5?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Rukna nahi hai, thakna nahi hai!” 🌅</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Consistency hi kamyabi ka raaz hai. Apna daily progress yahan track karein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Sasta aur Healthy Pakistani Rashan!” 🥗</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Budget mein rehte huwe behtareen auto-generated diet plan hasil karein aur fit rahein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Doston ko Leaderboard par piche chorrein!” 🏆</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Healthy competition mein hissa lein, apna level up karein aur top rank hasil karein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1548839140-29a749e1ab14?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Pani zindgi hai! Hydration track karein.” 💧</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Din mein 8 glass pani poora karein, dehydration se bachein aur apni energy ko boost karein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1599058917212-d750089bc07e?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Bina Gym ke Calisthenics Routine!” 🤸</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Ghar bethe expert level home workouts follow karein aur strong fitness banayein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1474418397713-722a45d0dd31?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Zehni Sakoon aur Mood Tracking” 🧘</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Apni mental health ka khayal rakhein, habits track karein aur stress ko door bhagayein.</p>
+            </div>
+        </div>
+        <div class="slide-item" style="background-image: url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1000');">
+            <div class="slide-overlay">
+                <h3 style="color:#ffffff; margin:0; font-family:'Poppins';">“Daily Streaks aur Badges Unlock Karein!” 🔥</h3>
+                <p style="color:#a5b4fc; margin:0; font-size:14px;">Lagatar tracking se nayi achievements, XP points aur exclusive badges hasil karein.</p>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
         
@@ -399,6 +432,7 @@ if not st.session_state["logged_in"]:
                 
             su_w_unit = st.selectbox("Weight System Chunein:", ["Kilograms (kg)", "Pounds (lbs)"])
             su_w_val = st.number_input(f"Current Weight ({su_w_unit.split()[-1]}):", min_value=20.0, max_value=250.0, value=60.0)
+            
             su_goal = st.selectbox("Aapka Fitness Goal Kya Hai?", ["Fat Loss", "Muscle Gain", "Fitness Maintenance"])
             
         if st.button("Naya Account Register Karein ✨"):
@@ -411,17 +445,16 @@ if not st.session_state["logged_in"]:
                     cal = estimate_calories(su_age, su_w_val, su_h_val, su_w_unit, su_h_unit, su_goal)
                     cursor.execute("""
                         INSERT INTO users (username, password, age, gender, height, weight, height_unit, weight_unit, goal, target_calories)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (su_user, su_pass, su_age, su_gender, su_h_val, su_w_val, su_h_unit, su_w_unit, su_goal, cal))
                     
                     starter_habits = ["8 Glass Pani Peena 💧", "30-min Pushups/Workout 🤸", "Subah Jaldi Uthna 🌅"]
                     for habit in starter_habits:
-                        cursor.execute("INSERT INTO habits (username, habit_name) VALUES (%s, %s) ON CONFLICT (username, habit_name) DO NOTHING", (su_user, habit))
+                        cursor.execute("INSERT OR IGNORE INTO habits (username, habit_name) VALUES (?, ?)", (su_user, habit))
                     
                     conn.commit()
                     st.success("🎉 Account successfully ban gaya! Ab upar 'Login' option select kar ke login karein.")
-                except psycopg2.IntegrityError:
-                    conn.rollback()
+                except sqlite3.IntegrityError:
                     st.error("Oops! Yeh username pehle se kisi ke pas hai. Koi aur naam chunein.")
                 finally:
                     conn.close()
@@ -434,7 +467,7 @@ if not st.session_state["logged_in"]:
         if st.button("Magic Dashboard Par Chalein 🚀"):
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (lin_u, lin_p))
+            cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (lin_u, lin_p))
             user_rec = cursor.fetchone()
             conn.close()
             
@@ -486,7 +519,11 @@ else:
     st.progress(xp_progress)
     
     tab_dashboard, tab_tracker, tab_diet, tab_biometrics, tab_settings = st.tabs([
-        "🌌 Dashboard & Competitions", "📝 Habit Checklist", "🥗 Nutrition & Workout", "⚖️ Weight Progress", "🛠️ Settings"
+        "🌌 Dashboard & Competitions",
+        "📝 Habit Checklist",
+        "🥗 Nutrition & Workout",
+        "⚖️ Weight Progress",
+        "🛠️ Settings"
     ])
     
     # ----------------------------------------
@@ -505,6 +542,7 @@ else:
         col_db1, col_db2 = st.columns([2, 1])
         with col_db1:
             st.subheader("🔥 Your Current Rank")
+            
             st.markdown(f"""
             <div class="metric-card" style="text-align:center; border: 2px solid {current_badge['color']}; background: linear-gradient(180deg, rgba(17,24,39,0.8) 0%, {current_badge['color']}15 100%); padding: 30px;">
                 <h2 style="color:{current_badge['color']}; margin:0; font-size: 32px; font-family:'Poppins';">{current_badge['name']}</h2>
@@ -519,7 +557,7 @@ else:
                 st.success("Bohot behtareen! Dehydration cycle complete! 🧊")
             st.markdown("</div>", unsafe_allow_html=True)
             
-       with col_db2:
+        with col_db2:
             st.subheader("🏆 Leaderboard")
             conn = get_db_connection()
             leaderboard_df = pd.read_sql_query("""
@@ -531,13 +569,9 @@ else:
             if leaderboard_df.empty:
                 st.info("No logs present. Register other accounts to view competition!")
             else:
-                leaderboard_df["completed"] = pd.to_numeric(leaderboard_df["completed"], errors='coerce').fillna(0)
-                leaderboard_df["total"] = pd.to_numeric(leaderboard_df["total"], errors='coerce').fillna(1)
-                
                 leaderboard_df["Score (%)"] = ((leaderboard_df["completed"] / leaderboard_df["total"]) * 100).round(1)
                 leaderboard_df = leaderboard_df.sort_values(by="Score (%)", ascending=False).reset_index(drop=True)
                 medals = ["🥇", "🥈", "🥉"]
-                
                 for index, row in leaderboard_df.iterrows():
                     medal_icon = medals[index] if index < 3 else "⚡"
                     st.markdown(f"""
@@ -551,41 +585,50 @@ else:
                     
         st.markdown("---")
         
+       # --- NAYA EDIT PROFILE SECTION (WITH PASSWORD UPDATE) ---
         with st.expander("⚙️ Edit Profile / Update Information"):
             st.write("Apni profile details ya password update karein:")
+            
             c_p1, c_p2 = st.columns(2)
             with c_p1:
                 upd_age = st.number_input("Update Age:", min_value=10, max_value=100, value=int(user_info["age"]))
                 gender_opts = ["Male", "Female", "Other"]
                 upd_gender = st.selectbox("Update Gender:", gender_opts, index=gender_opts.index(user_info["gender"]) if user_info["gender"] in gender_opts else 0)
                 upd_goal = st.selectbox("Update Goal:", ["Fat Loss", "Muscle Gain", "Fitness Maintenance"], index=["Fat Loss", "Muscle Gain", "Fitness Maintenance"].index(user_info["goal"]))
+            
             with c_p2:
                 upd_h_val = st.number_input("Update Height:", min_value=3.0, max_value=250.0, value=float(user_info["height"]))
                 upd_w_val = st.number_input("Update Weight:", min_value=20.0, max_value=300.0, value=float(user_info["weight"]))
+                # Password Fields
                 upd_pass = st.text_input("Naya Password (Khali chorein agar nahi badalna):", type="password")
                 upd_pass_conf = st.text_input("Password Confirm karein:", type="password")
 
             if st.button("Save Profile Changes 💾"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
+                
+                # Check password match
                 if upd_pass and upd_pass != upd_pass_conf:
                     st.error("Passwords match nahi kar rahe!")
                 else:
                     new_cal = estimate_calories(upd_age, upd_w_val, upd_h_val, user_info["height_unit"], user_info["weight_unit"], upd_goal)
+                    
                     if upd_pass:
-                        cursor.execute("UPDATE users SET age=%s, gender=%s, height=%s, weight=%s, goal=%s, target_calories=%s, password=%s WHERE username=%s", 
+                        cursor.execute("UPDATE users SET age=?, gender=?, height=?, weight=?, goal=?, target_calories=?, password=? WHERE username=?", 
                                        (upd_age, upd_gender, upd_h_val, upd_w_val, upd_goal, new_cal, upd_pass, username))
                     else:
-                        cursor.execute("UPDATE users SET age=%s, gender=%s, height=%s, weight=%s, goal=%s, target_calories=%s WHERE username=%s", 
+                        cursor.execute("UPDATE users SET age=?, gender=?, height=?, weight=?, goal=?, target_calories=? WHERE username=?", 
                                        (upd_age, upd_gender, upd_h_val, upd_w_val, upd_goal, new_cal, username))
+                    
                     conn.commit()
-                    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+                    # Refresh Session
+                    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
                     st.session_state["user_details"] = dict(cursor.fetchone())
                     conn.close()
+                    
                     st.success("🎉 Profile aur Password successfully update ho gaye!")
                     time.sleep(1)
                     st.rerun()
-
     # ----------------------------------------
     # TAB 2: INTERACTIVE CALENDAR TRACKER
     # ----------------------------------------
@@ -596,17 +639,18 @@ else:
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT habit_name FROM habits WHERE username = %s", (username,))
+        cursor.execute("SELECT habit_name FROM habits WHERE username = ?", (username,))
         user_habits = [row["habit_name"] for row in cursor.fetchall()]
         
         if not user_habits:
             st.info("Aapki list bilkul khali hai! 'Settings' tab par ja kar habits add karein.")
         else:
-            cursor.execute("SELECT habit_name, status FROM habit_logs WHERE username = %s AND log_date = %s", (username, target_date_str))
+            cursor.execute("SELECT habit_name, status FROM habit_logs WHERE username = ? AND log_date = ?", (username, target_date_str))
             logs_dict = {row["habit_name"]: row["status"] for row in cursor.fetchall()}
             conn.close()
             
             st.markdown(f"**Check off completed habits for date:** `{target_date_str}`")
+            
             updated_statuses = {}
             for i, habit in enumerate(user_habits):
                 current_checked = True if logs_dict.get(habit, 0) == 1 else False
@@ -619,12 +663,13 @@ else:
                     val = 1 if is_checked else 0
                     cursor.execute("""
                         INSERT INTO habit_logs (username, habit_name, log_date, status)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT(username, habit_name, log_date) DO UPDATE SET status=EXCLUDED.status
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(username, habit_name, log_date) DO UPDATE SET status=excluded.status
                     """, (username, habit, target_date_str, val))
                 conn.commit()
                 conn.close()
                 
+                # --- MAGICAL BALLOON + TEXT OVERLAY ---
                 st.balloons()
                 st.markdown("""
                     <div class='celebration-banner' style='border-color: #a855f7;'>
@@ -632,13 +677,13 @@ else:
                         <h3 style='color: white;'>Aapki Habits Successfully Save Ho Gayin!</h3>
                     </div>
                 """, unsafe_allow_html=True)
-                time.sleep(2.5) 
+                time.sleep(2.5) # Rerun se pehle animation ka wait karega
                 st.rerun()
                 
             st.markdown("---")
             st.subheader("📊 Habit Success Trends Over Time")
             conn = get_db_connection()
-            all_logs_df = pd.read_sql_query("SELECT log_date, habit_name, status FROM habit_logs WHERE username = %s", conn, params=(username,))
+            all_logs_df = pd.read_sql_query("SELECT log_date, habit_name, status FROM habit_logs WHERE username = ?", conn, params=(username,))
             conn.close()
             
             if not all_logs_df.empty:
@@ -654,6 +699,7 @@ else:
                 
                 st.markdown("---")
                 st.subheader("📊 Habit Analytics (Daily, Weekly, Yearly)")
+                
                 today_dt_habit = pd.to_datetime(target_date_str)
                 today_h_df = all_logs_df[all_logs_df["log_date"] == today_dt_habit]
                 today_h_pct = int((today_h_df["status"].sum() / len(today_h_df)) * 100) if len(today_h_df) > 0 else 0
@@ -708,7 +754,7 @@ else:
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT diet_completed, workout_completed FROM diet_workout_logs WHERE username = %s AND log_date = %s", (username, diet_date_str))
+        cursor.execute("SELECT diet_completed, workout_completed FROM diet_workout_logs WHERE username = ? AND log_date = ?", (username, diet_date_str))
         dw_log = cursor.fetchone()
         conn.close()
         
@@ -794,13 +840,14 @@ else:
             
             cursor.execute("""
                 INSERT INTO diet_workout_logs (username, log_date, diet_completed, workout_completed)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT(username, log_date) DO UPDATE SET diet_completed=EXCLUDED.diet_completed, workout_completed=EXCLUDED.workout_completed
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(username, log_date) DO UPDATE SET diet_completed=excluded.diet_completed, workout_completed=excluded.workout_completed
             """, (username, diet_date_str, diet_val, workout_val))
             
             conn.commit()
             conn.close()
             
+            # --- MAGICAL BALLOON + TEXT OVERLAY ---
             st.balloons()
             st.markdown("""
                 <div class='celebration-banner' style='border-color: #f97316;'>
@@ -808,13 +855,13 @@ else:
                     <h3 style='color: white;'>Diet Aur Workout Target Achieved!</h3>
                 </div>
             """, unsafe_allow_html=True)
-            time.sleep(2.5) 
+            time.sleep(2.5) # Rerun se pehle wait
             st.rerun()
             
         st.markdown("---")
         st.subheader("📊 Diet & Workout Analytics (Daily, Weekly, Yearly)")
         conn = get_db_connection()
-        dw_logs_df = pd.read_sql_query("SELECT log_date, diet_completed, workout_completed FROM diet_workout_logs WHERE username = %s", conn, params=(username,))
+        dw_logs_df = pd.read_sql_query("SELECT log_date, diet_completed, workout_completed FROM diet_workout_logs WHERE username = ?", conn, params=(username,))
         conn.close()
         
         if not dw_logs_df.empty:
@@ -875,10 +922,14 @@ else:
             
             calculated_bmi_val = calculate_bmi(wt_val, user_info["height"], user_info["weight_unit"], user_info["height_unit"])
             
-            if calculated_bmi_val < 18.5: live_bmi_status, live_bmi_color = "Underweight (Kamzor) 🥣", "#38bdf8"
-            elif 18.5 <= calculated_bmi_val < 24.9: live_bmi_status, live_bmi_color = "Normal Fit (Munasib) 🟢", "#4ade80"
-            elif 25.0 <= calculated_bmi_val < 29.9: live_bmi_status, live_bmi_color = "Overweight (Motaapa Shuru) 🟡", "#facc15"
-            else: live_bmi_status, live_bmi_color = "Obese (Bohot Ziada Weight) 🔴", "#f87171"
+            if calculated_bmi_val < 18.5:
+                live_bmi_status, live_bmi_color = "Underweight (Kamzor) 🥣", "#38bdf8"
+            elif 18.5 <= calculated_bmi_val < 24.9:
+                live_bmi_status, live_bmi_color = "Normal Fit (Munasib) 🟢", "#4ade80"
+            elif 25.0 <= calculated_bmi_val < 29.9:
+                live_bmi_status, live_bmi_color = "Overweight (Motaapa Shuru) 🟡", "#facc15"
+            else:
+                live_bmi_status, live_bmi_color = "Obese (Bohot Ziada Weight) 🔴", "#f87171"
                 
             st.markdown(f"**Live Calculated BMI Preview:** <span style='font-size:20px; color:{live_bmi_color}; font-weight:bold;'>{calculated_bmi_val} ({live_bmi_status})</span>", unsafe_allow_html=True)
             
@@ -887,12 +938,13 @@ else:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO weight_tracker (username, weight, bmi, log_date)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT(username, log_date) DO UPDATE SET weight=EXCLUDED.weight, bmi=EXCLUDED.bmi
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(username, log_date) DO UPDATE SET weight=excluded.weight, bmi=excluded.bmi
                 """, (username, wt_val, calculated_bmi_val, wt_date_str))
                 conn.commit()
                 conn.close()
                 
+                # --- MAGICAL BALLOON + TEXT OVERLAY ---
                 st.balloons()
                 st.markdown("""
                     <div class='celebration-banner' style='border-color: #38bdf8;'>
@@ -900,7 +952,7 @@ else:
                         <h3 style='color: white;'>Aapka Naya Weight Update Ho Gaya!</h3>
                     </div>
                 """, unsafe_allow_html=True)
-                time.sleep(2.5) 
+                time.sleep(2.5) # Rerun se pehle wait
                 st.rerun()
                 
             st.markdown("</div>", unsafe_allow_html=True)
@@ -914,7 +966,7 @@ else:
             st.markdown("</div>", unsafe_allow_html=True)
             
         conn = get_db_connection()
-        weight_df = pd.read_sql_query("SELECT log_date, weight, bmi FROM weight_tracker WHERE username = %s ORDER BY log_date ASC", conn, params=(username,))
+        weight_df = pd.read_sql_query("SELECT log_date, weight, bmi FROM weight_tracker WHERE username = ? ORDER BY log_date ASC", conn, params=(username,))
         conn.close()
         
         if not weight_df.empty:
@@ -934,34 +986,37 @@ else:
         st.subheader("🛠️ Settings & Admin Panel")
         
         # --- ADMIN PANEL (Sirf Aapke liye) ---
-        if username.strip().lower() == "najam":
+        if username == "Najam": # Yahan apna username likhein
             st.markdown("---")
             st.markdown("### 👑 Admin Control Panel")
             conn = get_db_connection()
+            # Sab users ka data fetch karein
             all_users = pd.read_sql_query("SELECT id, username, password, goal FROM users", conn)
+            conn.close()
             
             st.write("#### 👥 All Registered Users")
             st.dataframe(all_users, use_container_width=True)
             
+            # Account Delete Karne Ka Option
             st.write("#### 🗑️ Delete User Account")
             user_to_delete = st.selectbox("Delete karne ke liye user chunein:", all_users["username"].tolist())
             
             if st.button(f"🛑 Hamesha ke liye delete karein: {user_to_delete}"):
-                if user_to_delete.strip().lower() == "najam":
+                if user_to_delete == "Najam":
                     st.error("Admin account delete nahi ho sakta!")
                 else:
+                    conn = get_db_connection()
                     cursor = conn.cursor()
-                    cursor.execute("DELETE FROM users WHERE username = %s", (user_to_delete,))
-                    cursor.execute("DELETE FROM habit_logs WHERE username = %s", (user_to_delete,))
-                    cursor.execute("DELETE FROM habits WHERE username = %s", (user_to_delete,))
-                    cursor.execute("DELETE FROM diet_workout_logs WHERE username = %s", (user_to_delete,))
-                    cursor.execute("DELETE FROM weight_tracker WHERE username = %s", (user_to_delete,))
-                    cursor.execute("DELETE FROM login_logs WHERE username = %s", (user_to_delete,))
+                    cursor.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
+                    cursor.execute("DELETE FROM habit_logs WHERE username = ?", (user_to_delete,))
+                    cursor.execute("DELETE FROM habits WHERE username = ?", (user_to_delete,))
+                    cursor.execute("DELETE FROM diet_workout_logs WHERE username = ?", (user_to_delete,))
+                    cursor.execute("DELETE FROM weight_tracker WHERE username = ?", (user_to_delete,))
+                    cursor.execute("DELETE FROM login_logs WHERE username = ?", (user_to_delete,))
                     conn.commit()
+                    conn.close()
                     st.success(f"User '{user_to_delete}' ka account aur uska saara data delete ho gaya.")
-                    time.sleep(1)
                     st.rerun()
-            conn.close()
             st.markdown("---")
 
         # --- AAM USER KE LIYE SETTINGS ---
@@ -975,16 +1030,12 @@ else:
                     conn = get_db_connection()
                     cursor = conn.cursor()
                     try:
-                        cursor.execute("INSERT INTO habits (username, habit_name) VALUES (%s, %s)", (username, new_hb))
+                        cursor.execute("INSERT INTO habits (username, habit_name) VALUES (?, ?)", (username, new_hb))
                         conn.commit()
                         st.success(f"Add ho gaya: '{new_hb}'")
-                        time.sleep(1)
                         st.rerun()
-                    except psycopg2.IntegrityError:
-                        conn.rollback()
-                        st.error("Yeh habit pehle se add hai!")
-                    finally:
-                        conn.close()
+                    except: st.error("Yeh habit pehle se add hai!")
+                    finally: conn.close()
             st.markdown("</div>", unsafe_allow_html=True)
             
         with col_s2:
@@ -992,19 +1043,21 @@ else:
             st.markdown("#### 🗑️ Delete Habit")
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT habit_name FROM habits WHERE username = %s", (username,))
+            cursor.execute("SELECT habit_name FROM habits WHERE username = ?", (username,))
             user_current_h = [row["habit_name"] for row in cursor.fetchall()]
+            conn.close()
             
             if user_current_h:
                 del_target = st.selectbox("Select to delete:", user_current_h)
                 if st.button("Delete Habit 🛑"):
-                    cursor.execute("DELETE FROM habits WHERE username = %s AND habit_name = %s", (username, del_target))
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM habits WHERE username = ? AND habit_name = ?", (username, del_target))
                     conn.commit()
                     conn.close()
                     st.rerun()
-            else: conn.close()
             st.markdown("</div>", unsafe_allow_html=True)
-            
+            # Sidebar mein logout hamesha dikhega
 if st.session_state["logged_in"]:
     with st.sidebar:
         st.write(f"Logged in as: {username}")
