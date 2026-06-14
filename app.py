@@ -519,7 +519,7 @@ else:
                 st.success("Bohot behtareen! Dehydration cycle complete! 🧊")
             st.markdown("</div>", unsafe_allow_html=True)
             
-        with col_db2:
+       with col_db2:
             st.subheader("🏆 Leaderboard")
             conn = get_db_connection()
             leaderboard_df = pd.read_sql_query("""
@@ -531,14 +531,13 @@ else:
             if leaderboard_df.empty:
                 st.info("No logs present. Register other accounts to view competition!")
             else:
-                else:
-                    # Numbers mein convert karna taake error na aaye
-                    leaderboard_df["completed"] = pd.to_numeric(leaderboard_df["completed"], errors='coerce').fillna(0)
-                    leaderboard_df["total"] = pd.to_numeric(leaderboard_df["total"], errors='coerce').fillna(1)
-                    
-                    leaderboard_df["Score (%)"] = ((leaderboard_df["completed"] / leaderboard_df["total"]) * 100).round(1)
-                    leaderboard_df = leaderboard_df.sort_values(by="Score (%)", ascending=False).reset_index(drop=True)
+                leaderboard_df["completed"] = pd.to_numeric(leaderboard_df["completed"], errors='coerce').fillna(0)
+                leaderboard_df["total"] = pd.to_numeric(leaderboard_df["total"], errors='coerce').fillna(1)
+                
+                leaderboard_df["Score (%)"] = ((leaderboard_df["completed"] / leaderboard_df["total"]) * 100).round(1)
+                leaderboard_df = leaderboard_df.sort_values(by="Score (%)", ascending=False).reset_index(drop=True)
                 medals = ["🥇", "🥈", "🥉"]
+                
                 for index, row in leaderboard_df.iterrows():
                     medal_icon = medals[index] if index < 3 else "⚡"
                     st.markdown(f"""
