@@ -45,6 +45,21 @@ st.markdown("""
         color: #f3f4f6;
     }
     
+    /* Text Visibility Fixes */
+    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
+        color: #f3f4f6 !important;
+    }
+    
+    /* Tabs Visibility Fixes */
+    button[data-baseweb="tab"] p {
+        color: #cbd5e1 !important;
+        font-size: 16px !important;
+    }
+    button[aria-selected="true"] p {
+        color: #f97316 !important;
+        font-weight: 800 !important;
+    }
+    
     @keyframes pulseGlow {
         0%, 100% { 
             text-shadow: 0 0 10px rgba(192, 132, 252, 0.4), 0 0 20px rgba(249, 115, 22, 0.2); 
@@ -390,7 +405,7 @@ if not st.session_state["logged_in"]:
         lin_p = st.text_input("Password:", type="password", key="lin_p")
         
         if st.button("Magic Dashboard Par Chalein 🚀"):
-            users_df = get_sheet_data("users", ["username", "password"])
+            users_df = get_sheet_data("users", ["username", "password", "age", "gender", "height", "weight", "height_unit", "weight_unit", "goal", "target_calories"])
             if not users_df.empty:
                 user_match = users_df[(users_df["username"] == str(lin_u)) & (users_df["password"] == str(lin_p))]
                 if not user_match.empty:
@@ -885,8 +900,82 @@ else:
     with tab_settings:
         st.subheader("🛠️ Settings & Admin Panel")
         
-        # --- ADMIN PANEL (Sirf Aapke liye) ---
-        if username == "Najam": # Yahan apna username likhein
+        # --- ADMIN PANEL (Case Insensitive) ---
+        if username.strip().lower() == "najam":
             st.markdown("---")
             st.markdown("### 👑 Admin Control Panel")
             all_users = get_sheet_data("users", ["username", "password", "goal"])
+            
+            st.write("#### 👥 All Registered Users")
+            st.dataframe(all_users[["username", "password", "goal"]], use_container_width=True)
+            
+            # Account Delete Karne Ka Option
+            st.write("#### 🗑️ Delete User Account")
+            user_to_delete = st.selectbox("Delete karne ke liye user chunein:", all_users["username"].tolist())
+            
+            if st.button(f"🛑 Hamesha ke liye delete karein: {user_to_delete}"):
+                if user_to_delete.strip().lower() == "najam":
+                    st.error("Admin account delete nahi ho sakta!")
+                else:
+                    # Update all sheets by filtering out the user
+                    update_sheet_data("users", all_users[all_users["username"] != user_to_delete])
+                    
+                    h_logs = get_sheet_data("habit_logs", ["username"])
+                    update_sheet_data("habit_logs", h_logs[h_logs["username"] != user_to_delete])
+                    
+                    habits = get_sheet_data("habits", ["username"])
+                    update_sheet_data("habits", habits[habits["username"] != user_to_delete])
+                    
+                    dw_logs = get_sheet_data("diet_workout_logs", ["username"])
+                    update_sheet_data("diet_workout_logs", dw_logs[dw_logs["username"] != user_to_delete])
+                    
+                    w_track = get_sheet_data("weight_tracker", ["username"])
+                    update_sheet_data("weight_tracker", w_track[w_track["username"] != user_to_delete])
+                    
+                    l_logs = get_sheet_data("login_logs", ["username", "login_date"])
+                    update_sheet_data("login_logs", l_logs[l_logs["username"] != user_to_delete])
+                    
+                    st.success(f"User '{user_to_delete}' ka account aur uska saara data delete ho gaya.")
+                    st.rerun()
+            st.markdown("---")
+
+        # --- AAM USER KE LIYE SETTINGS ---
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+            st.markdown("#### ➕ Add Habit")
+            new_hb = st.text_input("Nayi custom habit ka naam:").strip()
+            if st.button("List Mein Add Karein ⚡"):
+                if new_hb:
+                    habits_df = get_sheet_data("habits", ["username", "habit_name"])
+                    if not habits_df[(habits_df["username"] == username) & (habits_df["habit_name"] == new_hb)].empty:
+                        st.error("Yeh habit pehle se add hai!")
+                    else:
+                        new_h_row = pd.DataFrame([{"username": username, "habit_name": new_hb}])
+                        update_sheet_data("habits", pd.concat([habits_df, new_h_row], ignore_index=True))
+                        st.success(f"Add ho gaya: '{new_hb}'")
+                        st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        with col_s2:
+            st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+            st.markdown("#### 🗑️ Delete Habit")
+            habits_df = get_sheet_data("habits", ["username", "habit_name"])
+            user_current_h = habits_df[habits_df["username"] == username]["habit_name"].tolist()
+            
+            if user_current_h:
+                del_target = st.selectbox("Select to delete:", user_current_h)
+                if st.button("Delete Habit 🛑"):
+                    habits_df = habits_df[~((habits_df["username"] == username) & (habits_df["habit_name"] == del_target))]
+                    update_sheet_data("habits", habits_df)
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+# Sidebar mein logout hamesha dikhega
+if st.session_state["logged_in"]:
+    with st.sidebar:
+        st.write(f"Logged in as: {username}")
+        if st.button("Log Out 🛑"):
+            st.session_state["logged_in"] = False
+            st.session_state["username"] = ""
+            st.rerun()
